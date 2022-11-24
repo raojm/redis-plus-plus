@@ -175,6 +175,18 @@ public:
         return _command_with_parser<bool, fmt::SetResultParser>(fmt::set_keepttl, key, val, keepttl, type);
     }
 
+    template <typename Output, typename Input>
+    Awaiter<Output> mget(Input first, Input last) {
+        range_check("MGET", first, last);
+
+        return _command<Output>(fmt::mget<Input>, first, last);
+    }
+
+    template <typename Output, typename T>
+    Awaiter<Output> mget(std::initializer_list<T> il) {
+        return mget<Output>(il.begin(), il.end());
+    }
+
     // HASH commands.
 
     Awaiter<long long> hdel(const StringView &key, const StringView &field) {
