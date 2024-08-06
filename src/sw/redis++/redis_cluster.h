@@ -21,15 +21,16 @@
 #include <chrono>
 #include <initializer_list>
 #include <tuple>
-#include "shards_pool.h"
-#include "reply.h"
-#include "command_options.h"
-#include "utils.h"
-#include "subscriber.h"
-#include "pipeline.h"
-#include "transaction.h"
-#include "redis.h"
-#include "connection.h"
+#include "sw/redis++/shards_pool.h"
+#include "sw/redis++/reply.h"
+#include "sw/redis++/command_options.h"
+#include "sw/redis++/utils.h"
+#include "sw/redis++/subscriber.h"
+#include "sw/redis++/pipeline.h"
+#include "sw/redis++/transaction.h"
+#include "sw/redis++/redis.h"
+#include "sw/redis++/redis_uri.h"
+#include "sw/redis++/connection.h"
 
 namespace sw {
 
@@ -44,14 +45,14 @@ using Pipeline = QueuedRedis<PipelineImpl>;
 
 class RedisCluster {
 public:
-    RedisCluster(const ConnectionOptions &connection_opts,
+    explicit RedisCluster(const ConnectionOptions &connection_opts,
                     const ConnectionPoolOptions &pool_opts = {},
-                    Role role = Role::MASTER) : _pool(pool_opts, connection_opts, role) {}
+                    Role role = Role::MASTER) : _pool(new ShardsPool(pool_opts, connection_opts, role)) {}
 
     // Construct RedisCluster with URI:
     // "tcp://127.0.0.1" or "tcp://127.0.0.1:6379"
     // Only need to specify one URI.
-    explicit RedisCluster(const std::string &uri);
+    explicit RedisCluster(const std::string &uri) : RedisCluster(Uri(uri)) {}
 
     RedisCluster(const RedisCluster &) = delete;
     RedisCluster& operator=(const RedisCluster &) = delete;
@@ -66,6 +67,18 @@ public:
     Transaction transaction(const StringView &hash_tag, bool piped = false, bool new_connection = true);
 
     Subscriber subscriber();
+
+    Subscriber subscriber(const StringView &hash_tag);
+
+    /// @brief Run the given callback with each node in the cluster.
+    /// The following is the prototype of the callback: void (Redis &r);
+    ///
+    /// Example:
+    /// @code{.cpp}
+    /// cluster.for_each([](Redis &r) { r.ping(); });
+    /// @endcode
+    template <typename Callback>
+    void for_each(Callback &&cb);
 
     template <typename Cmd, typename Key, typename ...Args>
     auto command(Cmd cmd, Key &&key, Args &&...args)
@@ -434,32 +447,32 @@ public:
     }
 
     template <typename Output>
-    long long hscan(const StringView &key,
-                    long long cursor,
-                    const StringView &pattern,
-                    long long count,
-                    Output output);
+    Cursor hscan(const StringView &key,
+                 Cursor cursor,
+                 const StringView &pattern,
+                 long long count,
+                 Output output);
 
     template <typename Output>
-    long long hscan(const StringView &key,
-                    long long cursor,
-                    const StringView &pattern,
-                    Output output);
+    Cursor hscan(const StringView &key,
+                 Cursor cursor,
+                 const StringView &pattern,
+                 Output output);
 
     template <typename Output>
-    long long hscan(const StringView &key,
-                    long long cursor,
-                    long long count,
-                    Output output);
+    Cursor hscan(const StringView &key,
+                 Cursor cursor,
+                 long long count,
+                 Output output);
 
     template <typename Output>
-    long long hscan(const StringView &key,
-                    long long cursor,
-                    Output output);
+    Cursor hscan(const StringView &key,
+                 Cursor cursor,
+                 Output output);
 
-    bool hset(const StringView &key, const StringView &field, const StringView &val);
+    long long hset(const StringView &key, const StringView &field, const StringView &val);
 
-    bool hset(const StringView &key, const std::pair<StringView, StringView> &item);
+    long long hset(const StringView &key, const std::pair<StringView, StringView> &item);
 
     template <typename Input>
     auto hset(const StringView &key, Input first, Input last)
@@ -565,28 +578,28 @@ public:
     }
 
     template <typename Output>
-    long long sscan(const StringView &key,
-                    long long cursor,
-                    const StringView &pattern,
-                    long long count,
-                    Output output);
+    Cursor sscan(const StringView &key,
+                 Cursor cursor,
+                 const StringView &pattern,
+                 long long count,
+                 Output output);
 
     template <typename Output>
-    long long sscan(const StringView &key,
-                    long long cursor,
-                    const StringView &pattern,
-                    Output output);
+    Cursor sscan(const StringView &key,
+                 Cursor cursor,
+                 const StringView &pattern,
+                 Output output);
 
     template <typename Output>
-    long long sscan(const StringView &key,
-                    long long cursor,
-                    long long count,
-                    Output output);
+    Cursor sscan(const StringView &key,
+                 Cursor cursor,
+                 long long count,
+                 Output output);
 
     template <typename Output>
-    long long sscan(const StringView &key,
-                    long long cursor,
-                    Output output);
+    Cursor sscan(const StringView &key,
+                 Cursor cursor,
+                 Output output);
 
     template <typename Input, typename Output>
     void sunion(Input first, Input last, Output output);
@@ -812,28 +825,28 @@ public:
     OptionalLongLong zrevrank(const StringView &key, const StringView &member);
 
     template <typename Output>
-    long long zscan(const StringView &key,
-                    long long cursor,
-                    const StringView &pattern,
-                    long long count,
-                    Output output);
+    Cursor zscan(const StringView &key,
+                 Cursor cursor,
+                 const StringView &pattern,
+                 long long count,
+                 Output output);
 
     template <typename Output>
-    long long zscan(const StringView &key,
-                    long long cursor,
-                    const StringView &pattern,
-                    Output output);
+    Cursor zscan(const StringView &key,
+                 Cursor cursor,
+                 const StringView &pattern,
+                 Output output);
 
     template <typename Output>
-    long long zscan(const StringView &key,
-                    long long cursor,
-                    long long count,
-                    Output output);
+    Cursor zscan(const StringView &key,
+                 Cursor cursor,
+                 long long count,
+                 Output output);
 
     template <typename Output>
-    long long zscan(const StringView &key,
-                    long long cursor,
-                    Output output);
+    Cursor zscan(const StringView &key,
+                 Cursor cursor,
+                 Output output);
 
     OptionalDouble zscore(const StringView &key, const StringView &member);
 
@@ -1054,6 +1067,8 @@ public:
     // PUBSUB commands.
 
     long long publish(const StringView &channel, const StringView &message);
+
+    long long spublish(const StringView &channel, const StringView &message);
 
     // Stream commands.
 
@@ -1383,6 +1398,8 @@ public:
             XtrimStrategy strategy, long long limit);
 
 private:
+    explicit RedisCluster(const Uri &uri);
+
     class Command {
     public:
         explicit Command(const StringView &cmd_name) : _cmd_name(cmd_name) {}
@@ -1442,13 +1459,13 @@ private:
     template <typename Output, typename Cmd, typename ...Args>
     ReplyUPtr _score_command(Cmd cmd, Args &&... args);
 
-    ShardsPool _pool;
+    ShardsPoolUPtr _pool;
 };
 
 }
 
 }
 
-#include "redis_cluster.hpp"
+#include "sw/redis++/redis_cluster.hpp"
 
 #endif // end SEWENEW_REDISPLUSPLUS_REDIS_CLUSTER_H

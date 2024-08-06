@@ -20,10 +20,10 @@
 #include <unordered_map>
 #include <string>
 #include <functional>
-#include "connection.h"
-#include "reply.h"
-#include "command.h"
-#include "utils.h"
+#include "sw/redis++/connection.h"
+#include "sw/redis++/reply.h"
+#include "sw/redis++/command.h"
+#include "sw/redis++/utils.h"
 
 namespace sw {
 
@@ -76,7 +76,11 @@ public:
         PSUBSCRIBE,
         PUNSUBSCRIBE,
         MESSAGE,
-        PMESSAGE
+        PMESSAGE,
+        SSUBSCRIBE,
+        SUNSUBSCRIBE,
+        SMESSAGE,
+        UNKNOWN
     };
 
     template <typename MsgCb>
@@ -84,6 +88,9 @@ public:
 
     template <typename PMsgCb>
     void on_pmessage(PMsgCb pmsg_callback);
+
+    template <typename SMsgCb>
+    void on_smessage(SMsgCb smsg_callback);
 
     template <typename MetaCb>
     void on_meta(MetaCb meta_callback);
@@ -132,6 +139,28 @@ public:
         punsubscribe(channels.begin(), channels.end());
     }
 
+    void ssubscribe(const StringView &channel);
+
+    template <typename Input>
+    void ssubscribe(Input first, Input last);
+
+    template <typename T>
+    void ssubscribe(std::initializer_list<T> channels) {
+        ssubscribe(channels.begin(), channels.end());
+    }
+
+    void sunsubscribe();
+
+    void sunsubscribe(const StringView &channel);
+
+    template <typename Input>
+    void sunsubscribe(Input first, Input last);
+
+    template <typename T>
+    void sunsubscribe(std::initializer_list<T> channels) {
+        sunsubscribe(channels.begin(), channels.end());
+    }
+
     void consume();
 
 private:
@@ -150,6 +179,8 @@ private:
 
     void _handle_pmessage(redisReply &reply);
 
+    void _handle_smessage(redisReply &reply);
+
     void _handle_meta(MsgType type, redisReply &reply);
 
     using MsgCallback = std::function<void (std::string channel, std::string msg)>;
@@ -157,6 +188,9 @@ private:
     using PatternMsgCallback = std::function<void (std::string pattern,
                                                     std::string channel,
                                                     std::string msg)>;
+
+    using SMsgCallback = std::function<void (std::string channel, std::string msg)>;
+
 
     using MetaCallback = std::function<void (MsgType type,
                                                 OptionalString channel,
@@ -167,6 +201,8 @@ private:
     MsgCallback _msg_callback = nullptr;
 
     PatternMsgCallback _pmsg_callback = nullptr;
+
+    SMsgCallback _smsg_callback = nullptr;
 
     MetaCallback _meta_callback = nullptr;
 };
@@ -179,6 +215,11 @@ void Subscriber::on_message(MsgCb msg_callback) {
 template <typename PMsgCb>
 void Subscriber::on_pmessage(PMsgCb pmsg_callback) {
     _pmsg_callback = pmsg_callback;
+}
+
+template <typename SMsgCb>
+void Subscriber::on_smessage(SMsgCb smsg_callback) {
+    _smsg_callback = smsg_callback;
 }
 
 template <typename MetaCb>
@@ -220,6 +261,24 @@ void Subscriber::punsubscribe(Input first, Input last) {
     _check_connection();
 
     cmd::punsubscribe_range(_connection, first, last);
+}
+
+template <typename Input>
+void Subscriber::ssubscribe(Input first, Input last) {
+    if (first == last) {
+        return;
+    }
+
+    _check_connection();
+
+    cmd::ssubscribe_range(_connection, first, last);
+}
+
+template <typename Input>
+void Subscriber::sunsubscribe(Input first, Input last) {
+    _check_connection();
+
+    cmd::sunsubscribe_range(_connection, first, last);
 }
 
 }

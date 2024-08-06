@@ -14,20 +14,27 @@
    limitations under the License.
  *************************************************************************/
 
-#include "redis_cluster.h"
+#include "sw/redis++/redis_cluster.h"
+#include <cassert>
 #include <hiredis/hiredis.h>
-#include "command.h"
-#include "errors.h"
-#include "queued_redis.h"
+#include "sw/redis++/command.h"
+#include "sw/redis++/errors.h"
+#include "sw/redis++/queued_redis.h"
+#include "sw/redis++/redis_uri.h"
 
 namespace sw {
 
 namespace redis {
 
-RedisCluster::RedisCluster(const std::string &uri) : RedisCluster(ConnectionOptions(uri)) {}
+RedisCluster::RedisCluster(const Uri &uri) :
+    RedisCluster(uri.connection_options(), uri.connection_pool_options()) {}
 
 Redis RedisCluster::redis(const StringView &hash_tag, bool new_connection) {
-    auto pool = _pool.fetch(hash_tag);
+    assert(_pool);
+
+    _pool->async_update();
+
+    auto pool = _pool->fetch(hash_tag);
     if (new_connection) {
         // Create a new pool
         pool = std::make_shared<ConnectionPool>(pool->clone());
@@ -37,7 +44,11 @@ Redis RedisCluster::redis(const StringView &hash_tag, bool new_connection) {
 }
 
 Pipeline RedisCluster::pipeline(const StringView &hash_tag, bool new_connection) {
-    auto pool = _pool.fetch(hash_tag);
+    assert(_pool);
+
+    _pool->async_update();
+
+    auto pool = _pool->fetch(hash_tag);
     if (new_connection) {
         // Create a new pool
         pool = std::make_shared<ConnectionPool>(pool->clone());
@@ -47,7 +58,11 @@ Pipeline RedisCluster::pipeline(const StringView &hash_tag, bool new_connection)
 }
 
 Transaction RedisCluster::transaction(const StringView &hash_tag, bool piped, bool new_connection) {
-    auto pool = _pool.fetch(hash_tag);
+    assert(_pool);
+
+    _pool->async_update();
+
+    auto pool = _pool->fetch(hash_tag);
     if (new_connection) {
         // Create a new pool
         pool = std::make_shared<ConnectionPool>(pool->clone());
@@ -57,7 +72,20 @@ Transaction RedisCluster::transaction(const StringView &hash_tag, bool piped, bo
 }
 
 Subscriber RedisCluster::subscriber() {
-    auto opts = _pool.connection_options();
+    assert(_pool);
+
+    _pool->async_update();
+
+    auto opts = _pool->connection_options();
+    return Subscriber(Connection(opts));
+}
+
+Subscriber RedisCluster::subscriber(const StringView &hash_tag) {
+    assert(_pool);
+
+    _pool->async_update();
+
+    auto opts = _pool->connection_options(hash_tag);
     return Subscriber(Connection(opts));
 }
 
@@ -444,13 +472,13 @@ long long RedisCluster::hlen(const StringView &key) {
     return reply::parse<long long>(*reply);
 }
 
-bool RedisCluster::hset(const StringView &key, const StringView &field, const StringView &val) {
+long long RedisCluster::hset(const StringView &key, const StringView &field, const StringView &val) {
     auto reply = command(cmd::hset, key, field, val);
 
-    return reply::parse<bool>(*reply);
+    return reply::parse<long long>(*reply);
 }
 
-bool RedisCluster::hset(const StringView &key, const std::pair<StringView, StringView> &item) {
+long long RedisCluster::hset(const StringView &key, const std::pair<StringView, StringView> &item) {
     return hset(key, item.first, item.second);
 }
 
@@ -732,6 +760,12 @@ OptionalLongLong RedisCluster::georadiusbymember(const StringView &key,
 
 long long RedisCluster::publish(const StringView &channel, const StringView &message) {
     auto reply = command(cmd::publish, channel, message);
+
+    return reply::parse<long long>(*reply);
+}
+
+long long RedisCluster::spublish(const StringView &channel, const StringView &message) {
+    auto reply = command(cmd::spublish, channel, message);
 
     return reply::parse<long long>(*reply);
 }

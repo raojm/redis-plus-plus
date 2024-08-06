@@ -14,9 +14,9 @@
    limitations under the License.
  *************************************************************************/
 
-#include "shards_pool.h"
+#include "sw/redis++/shards_pool.h"
 #include <unordered_set>
-#include "errors.h"
+#include "sw/redis++/errors.h"
 
 namespace sw {
 
@@ -39,24 +39,22 @@ ShardsPool::ShardsPool(const ConnectionPoolOptions &pool_opts,
     _shards = _cluster_slots(connection);
 
     _init_pool(_shards);
+
+    _worker = std::thread([this]() { this->_run(); });
 }
 
-ShardsPool::ShardsPool(ShardsPool &&that) {
-    std::lock_guard<std::mutex> lock(that._mutex);
+ShardsPool::~ShardsPool() {
+    {
+        std::lock_guard<std::mutex> lock(_mutex);
 
-    _move(std::move(that));
-}
-
-ShardsPool& ShardsPool::operator=(ShardsPool &&that) {
-    if (this != &that) {
-        std::lock(_mutex, that._mutex);
-        std::lock_guard<std::mutex> lock_this(_mutex, std::adopt_lock);
-        std::lock_guard<std::mutex> lock_that(that._mutex, std::adopt_lock);
-
-        _move(std::move(that));
+        _update_status = UpdateStatus::STOP;
     }
 
-    return *this;
+    _cv.notify_one();
+
+    if (_worker.joinable()) {
+        _worker.join();
+    }
 }
 
 ConnectionPoolSPtr ShardsPool::fetch(const StringView &key) {
@@ -162,12 +160,32 @@ Shards ShardsPool::shards() {
     return _shards;
 }
 
-void ShardsPool::_move(ShardsPool &&that) {
-    _pool_opts = that._pool_opts;
-    _connection_opts = that._connection_opts;
-    _shards = std::move(that._shards);
-    _pools = std::move(that._pools);
-    _role = that._role;
+std::vector<ConnectionPoolSPtr> ShardsPool::pools() {
+    std::lock_guard<std::mutex> lock(_mutex);
+
+    std::vector<ConnectionPoolSPtr> nodes;
+    nodes.reserve(_pools.size());
+    for (const auto &pool : _pools) {
+        nodes.push_back(pool.second);
+    }
+
+    return nodes;
+}
+
+void ShardsPool::async_update() {
+    bool should_update = false;
+    {
+        std::lock_guard<std::mutex> lock(_mutex);
+
+        if (_update_status == UpdateStatus::UPDATED) {
+            should_update = true;
+            _update_status = UpdateStatus::STALE;
+        }
+    }
+
+    if (should_update) {
+        _cv.notify_one();
+    }
 }
 
 void ShardsPool::_init_pool(const Shards &shards) {
@@ -322,14 +340,14 @@ std::size_t ShardsPool::_random(std::size_t min, std::size_t max) const {
 ConnectionPoolSPtr& ShardsPool::_get_pool(Slot slot) {
     auto shards_iter = _shards.lower_bound(SlotRange{slot, slot});
     if (shards_iter == _shards.end() || slot < shards_iter->first.min) {
-        throw Error("Slot is out of range: " + std::to_string(slot));
+        throw SlotUncoveredError(slot);
     }
 
     const auto &node = shards_iter->second;
 
     auto node_iter = _pools.find(node);
     if (node_iter == _pools.end()) {
-        throw Error("Slot is NOT covered: " + std::to_string(slot));
+        throw SlotUncoveredError(slot);
     }
 
     return node_iter->second;
@@ -362,6 +380,40 @@ auto ShardsPool::_add_node(const Node &node) -> NodeMap::iterator {
     }
 
     return _pools.emplace(node, std::make_shared<ConnectionPool>(_pool_opts, opts)).first;
+}
+
+void ShardsPool::_run() {
+    while (true) {
+        std::unique_lock<std::mutex> lock(_mutex);
+        if (_update_status == UpdateStatus::UPDATED) {
+            _cv.wait(lock, [this]() { return this->_update_status != UpdateStatus::UPDATED; });
+        }
+
+        if (_update_status == UpdateStatus::STOP) {
+            break;
+        } else if (_update_status == UpdateStatus::STALE) {
+            lock.unlock();
+
+            _do_async_update();
+        } else {
+            assert("invalid UpdateStatus");
+        }
+    }
+}
+
+void ShardsPool::_do_async_update() {
+    try {
+        update();
+
+        std::lock_guard<std::mutex> lock(_mutex);
+
+        if (_update_status != UpdateStatus::STOP) {
+            _update_status = UpdateStatus::UPDATED;
+        }
+    } catch (...) {
+        // Ignore exceptions.
+        // TODO: should we sleep a while?
+    }
 }
 
 }

@@ -14,12 +14,12 @@
    limitations under the License.
  *************************************************************************/
 
-#include "errors.h"
+#include "sw/redis++/errors.h"
 #include <cassert>
 #include <cerrno>
 #include <unordered_map>
 #include <tuple>
-#include "shards.h"
+#include "sw/redis++/shards.h"
 
 namespace {
 
@@ -45,7 +45,8 @@ void throw_error(const redisContext &context, const std::string &err_info) {
         throw Error(err_info + ": null error message: " + std::to_string(err_code));
     }
 
-    auto err_msg = err_info + ": " + err_str;
+    auto err_msg = err_info + ": " + err_str
+        + ", err: " + std::to_string(err_code) + ", errno: " + std::to_string(errno);
 
     switch (err_code) {
     case REDIS_ERR_IO:
@@ -54,28 +55,22 @@ void throw_error(const redisContext &context, const std::string &err_info) {
         } else {
             throw IoError(err_msg);
         }
-        break;
 
     case REDIS_ERR_EOF:
         throw ClosedError(err_msg);
-        break;
 
     case REDIS_ERR_PROTOCOL:
         throw ProtoError(err_msg);
-        break;
 
     case REDIS_ERR_OOM:
         throw OomError(err_msg);
-        break;
 
     case REDIS_ERR_OTHER:
         throw Error(err_msg);
-        break;
 
 #ifdef REDIS_ERR_TIMEOUT
     case REDIS_ERR_TIMEOUT:
         throw TimeoutError(err_msg);
-        break;
 #endif
 
     default:
@@ -99,15 +94,12 @@ void throw_error(const redisReply &reply) {
     switch (err_type) {
     case ReplyErrorType::MOVED:
         throw MovedError(err_msg);
-        break;
 
     case ReplyErrorType::ASK:
         throw AskError(err_msg);
-        break;
 
     default:
         throw ReplyError(err_str);
-        break;
     }
 }
 

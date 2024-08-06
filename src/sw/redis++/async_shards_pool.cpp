@@ -14,9 +14,11 @@
    limitations under the License.
  *************************************************************************/
 
-#include "async_shards_pool.h"
+#include "sw/redis++/async_shards_pool.h"
 #include <cassert>
-#include "errors.h"
+#include <chrono>
+#include <thread>
+#include "sw/redis++/errors.h"
 
 namespace sw {
 
@@ -32,36 +34,23 @@ AsyncShardsPool::AsyncShardsPool(const EventLoopSPtr &loop,
             _connection_opts(connection_opts),
             _role(role),
             _loop(loop) {
-    assert(_loop);
+    assert(loop);
 
     if (_connection_opts.type != ConnectionType::TCP) {
         throw Error("Only support TCP connection for Redis Cluster");
     }
 
+    // Initialize local node-slot mapping with all slots to the given node.
+    // We'll update it later.
     auto node = Node{_connection_opts.host, _connection_opts.port};
     _shards.emplace(SlotRange{0U, SHARDS}, node);
     _pools.emplace(node,
             std::make_shared<AsyncConnectionPool>(_loop, _pool_opts, _connection_opts));
 
     _worker = std::thread([this]() { this->_run(); });
-}
 
-AsyncShardsPool::AsyncShardsPool(AsyncShardsPool &&that) {
-    std::lock_guard<std::mutex> lock(that._mutex);
-
-    _move(std::move(that));
-}
-
-AsyncShardsPool& AsyncShardsPool::operator=(AsyncShardsPool &&that) {
-    if (this != &that) {
-        std::lock(_mutex, that._mutex);
-        std::lock_guard<std::mutex> lock_this(_mutex, std::adopt_lock);
-        std::lock_guard<std::mutex> lock_that(that._mutex, std::adopt_lock);
-
-        _move(std::move(that));
-    }
-
-    return *this;
+    // Update node-slot mapping asynchrounously.
+    update();
 }
 
 AsyncShardsPool::~AsyncShardsPool() {
@@ -109,6 +98,10 @@ void AsyncShardsPool::update(const std::string &key, AsyncEventUPtr event) {
     _cv.notify_one();
 }
 
+void AsyncShardsPool::update() {
+    update({}, AsyncEventUPtr(new UpdateShardsEvent));
+}
+
 ConnectionOptions AsyncShardsPool::connection_options(const StringView &key) {
     auto slot = _slot(key);
 
@@ -119,17 +112,6 @@ ConnectionOptions AsyncShardsPool::connection_options() {
     auto slot = _slot();
 
     return _connection_options(slot);
-}
-
-void AsyncShardsPool::_move(AsyncShardsPool &&that) {
-    _pool_opts = that._pool_opts;
-    _connection_opts = that._connection_opts;
-    _role = that._role;
-    _shards = std::move(that._shards);
-    _pools = std::move(that._pools);
-    _loop = std::move(that._loop);
-    _worker = std::move(that._worker);
-    _events = std::move(that._events);
 }
 
 ConnectionOptions AsyncShardsPool::_connection_options(Slot slot) {
@@ -187,7 +169,7 @@ AsyncConnectionPoolSPtr& AsyncShardsPool::_get_pool(Slot slot) {
 
     auto node_iter = _pools.find(node);
     if (node_iter == _pools.end()) {
-        throw Error("Slot is NOT covered: " + std::to_string(slot));
+        throw SlotUncoveredError(slot);
     }
 
     return node_iter->second;
@@ -213,6 +195,11 @@ void AsyncShardsPool::_run() {
             if (_fail_events(events, std::current_exception())) {
                 break;
             }
+
+            // Failed to update shards, retry later.
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+
+            update();
         }
     }
 }
@@ -241,7 +228,7 @@ std::size_t AsyncShardsPool::_random(std::size_t min, std::size_t max) const {
 const Node& AsyncShardsPool::_get_node(Slot slot) const {
     auto shards_iter = _shards.lower_bound(SlotRange{slot, slot});
     if (shards_iter == _shards.end() || slot < shards_iter->first.min) {
-        throw Error("Slot is out of range: " + std::to_string(slot));
+        throw SlotUncoveredError(slot);
     }
 
     return shards_iter->second;

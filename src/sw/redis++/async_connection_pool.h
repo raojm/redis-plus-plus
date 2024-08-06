@@ -25,10 +25,10 @@
 #include <exception>
 #include <condition_variable>
 #include <deque>
-#include "connection.h"
-#include "connection_pool.h"
-#include "async_connection.h"
-#include "async_sentinel.h"
+#include "sw/redis++/connection.h"
+#include "sw/redis++/connection_pool.h"
+#include "sw/redis++/async_connection.h"
+#include "sw/redis++/async_sentinel.h"
 
 namespace sw {
 
@@ -70,17 +70,17 @@ private:
 
 class AsyncConnectionPool : public std::enable_shared_from_this<AsyncConnectionPool> {
 public:
-    AsyncConnectionPool(const EventLoopSPtr &loop,
+    AsyncConnectionPool(const EventLoopWPtr &loop,
                     const ConnectionPoolOptions &pool_opts,
                     const ConnectionOptions &connection_opts);
 
     AsyncConnectionPool(SimpleAsyncSentinel sentinel,
-                    const EventLoopSPtr &loop,
+                    const EventLoopWPtr &loop,
                     const ConnectionPoolOptions &pool_opts,
                     const ConnectionOptions &connection_opts);
 
-    AsyncConnectionPool(AsyncConnectionPool &&that);
-    AsyncConnectionPool& operator=(AsyncConnectionPool &&that);
+    AsyncConnectionPool(AsyncConnectionPool &&that) = delete;
+    AsyncConnectionPool& operator=(AsyncConnectionPool &&that) = delete;
 
     AsyncConnectionPool(const AsyncConnectionPool &) = delete;
     AsyncConnectionPool& operator=(const AsyncConnectionPool &) = delete;
@@ -97,7 +97,7 @@ public:
     // Create a new connection.
     AsyncConnectionSPtr create();
 
-    AsyncConnectionPool clone();
+    std::shared_ptr<AsyncConnectionPool> clone();
 
     // These update_node_info overloads are called by AsyncSentinel.
     void update_node_info(const std::string &host,
@@ -108,8 +108,6 @@ public:
             std::exception_ptr err);
 
 private:
-    void _move(AsyncConnectionPool &&that);
-
     // NOT thread-safe
     AsyncConnectionSPtr _create();
 
@@ -128,7 +126,9 @@ private:
 
     bool _role_changed(const ConnectionOptions &opts) const;
 
-    EventLoopSPtr _loop;
+    EventLoopSPtr _get_loop();
+
+    EventLoopWPtr _loop;
 
     ConnectionOptions _opts;
 

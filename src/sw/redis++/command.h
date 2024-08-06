@@ -21,10 +21,10 @@
 #include <ctime>
 #include <string>
 #include <chrono>
-#include "connection.h"
-#include "command_options.h"
-#include "command_args.h"
-#include "utils.h"
+#include "sw/redis++/connection.h"
+#include "sw/redis++/command_options.h"
+#include "sw/redis++/command_args.h"
+#include "sw/redis++/utils.h"
 
 namespace sw {
 
@@ -41,6 +41,10 @@ inline void auth(Connection &connection, const StringView &user, const StringVie
     connection.send("AUTH %b %b",
                     user.data(), user.size(),
                     password.data(), password.size());
+}
+
+inline void client_setname(Connection &connection, const StringView &name) {
+    connection.send("CLIENT SETNAME %b", name.data(), name.size());
 }
 
 inline void hello(Connection &connection, long long version) {
@@ -229,10 +233,10 @@ void restore(Connection &connection,
                 bool replace);
 
 inline void scan(Connection &connection,
-                    long long cursor,
+                    Cursor cursor,
                     const StringView &pattern,
                     long long count) {
-    connection.send("SCAN %lld MATCH %b COUNT %lld",
+    connection.send("SCAN %llu MATCH %b COUNT %lld",
                     cursor,
                     pattern.data(), pattern.size(),
                     count);
@@ -725,10 +729,10 @@ inline void hmset(Connection &connection,
 
 inline void hscan(Connection &connection,
                     const StringView &key,
-                    long long cursor,
+                    Cursor cursor,
                     const StringView &pattern,
                     long long count) {
-    connection.send("HSCAN %b %lld MATCH %b COUNT %lld",
+    connection.send("HSCAN %b %llu MATCH %b COUNT %lld",
                     key.data(), key.size(),
                     cursor,
                     pattern.data(), pattern.size(),
@@ -933,10 +937,10 @@ inline void srem_range(Connection &connection,
 
 inline void sscan(Connection &connection,
                     const StringView &key,
-                    long long cursor,
+                    Cursor cursor,
                     const StringView &pattern,
                     long long count) {
-    connection.send("SSCAN %b %lld MATCH %b COUNT %lld",
+    connection.send("SSCAN %b %llu MATCH %b COUNT %lld",
                     key.data(), key.size(),
                     cursor,
                     pattern.data(), pattern.size(),
@@ -1039,8 +1043,8 @@ inline void zcount(Connection &connection,
                     const Interval &interval) {
     connection.send("ZCOUNT %b %s %s",
                     key.data(), key.size(),
-                    interval.min().c_str(),
-                    interval.max().c_str());
+                    interval.lower().c_str(),
+                    interval.upper().c_str());
 }
 
 inline void zincrby(Connection &connection,
@@ -1074,8 +1078,8 @@ template <typename Interval>
 inline void zlexcount(Connection &connection,
                         const StringView &key,
                         const Interval &interval) {
-    const auto &min = interval.min();
-    const auto &max = interval.max();
+    const auto &min = interval.lower();
+    const auto &max = interval.upper();
 
     connection.send("ZLEXCOUNT %b %b %b",
                     key.data(), key.size(),
@@ -1118,8 +1122,8 @@ inline void zrangebylex(Connection &connection,
                         const StringView &key,
                         const Interval &interval,
                         const LimitOptions &opts) {
-    const auto &min = interval.min();
-    const auto &max = interval.max();
+    const auto &min = interval.lower();
+    const auto &max = interval.upper();
 
     connection.send("ZRANGEBYLEX %b %b %b LIMIT %lld %lld",
                     key.data(), key.size(),
@@ -1135,8 +1139,8 @@ void zrangebyscore(Connection &connection,
                     const Interval &interval,
                     const LimitOptions &opts,
                     bool with_scores) {
-    const auto &min = interval.min();
-    const auto &max = interval.max();
+    const auto &min = interval.lower();
+    const auto &max = interval.upper();
 
     if (with_scores) {
         connection.send("ZRANGEBYSCORE %b %b %b WITHSCORES LIMIT %lld %lld",
@@ -1188,8 +1192,8 @@ template <typename Interval>
 inline void zremrangebylex(Connection &connection,
                             const StringView &key,
                             const Interval &interval) {
-    const auto &min = interval.min();
-    const auto &max = interval.max();
+    const auto &min = interval.lower();
+    const auto &max = interval.upper();
 
     connection.send("ZREMRANGEBYLEX %b %b %b",
                     key.data(), key.size(),
@@ -1211,8 +1215,8 @@ template <typename Interval>
 inline void zremrangebyscore(Connection &connection,
                                 const StringView &key,
                                 const Interval &interval) {
-    const auto &min = interval.min();
-    const auto &max = interval.max();
+    const auto &min = interval.lower();
+    const auto &max = interval.upper();
 
     connection.send("ZREMRANGEBYSCORE %b %b %b",
                     key.data(), key.size(),
@@ -1243,8 +1247,8 @@ inline void zrevrangebylex(Connection &connection,
                             const StringView &key,
                             const Interval &interval,
                             const LimitOptions &opts) {
-    const auto &min = interval.min();
-    const auto &max = interval.max();
+    const auto &min = interval.lower();
+    const auto &max = interval.upper();
 
     connection.send("ZREVRANGEBYLEX %b %b %b LIMIT %lld %lld",
                     key.data(), key.size(),
@@ -1260,8 +1264,8 @@ void zrevrangebyscore(Connection &connection,
                         const Interval &interval,
                         const LimitOptions &opts,
                         bool with_scores) {
-    const auto &min = interval.min();
-    const auto &max = interval.max();
+    const auto &min = interval.lower();
+    const auto &max = interval.upper();
 
     if (with_scores) {
         connection.send("ZREVRANGEBYSCORE %b %b %b WITHSCORES LIMIT %lld %lld",
@@ -1290,10 +1294,10 @@ inline void zrevrank(Connection &connection,
 
 inline void zscan(Connection &connection,
                     const StringView &key,
-                    long long cursor,
+                    Cursor cursor,
                     const StringView &pattern,
                     long long count) {
-    connection.send("ZSCAN %b %lld MATCH %b COUNT %lld",
+    connection.send("ZSCAN %b %llu MATCH %b COUNT %lld",
                     key.data(), key.size(),
                     cursor,
                     pattern.data(), pattern.size(),
@@ -1590,6 +1594,14 @@ inline void publish(Connection &connection,
                     message.data(), message.size());
 }
 
+inline void spublish(Connection &connection,
+                    const StringView &channel,
+                    const StringView &message) {
+    connection.send("SPUBLISH %b %b",
+                    channel.data(), channel.size(),
+                    message.data(), message.size());
+}
+
 inline void punsubscribe(Connection &connection) {
     connection.send("PUNSUBSCRIBE");
 }
@@ -1642,6 +1654,42 @@ inline void unsubscribe_range(Connection &connection, Input first, Input last) {
 
     CmdArgs args;
     args << "UNSUBSCRIBE" << std::make_pair(first, last);
+
+    connection.send(args);
+}
+
+inline void ssubscribe(Connection &connection, const StringView &channel) {
+    connection.send("SSUBSCRIBE %b", channel.data(), channel.size());
+}
+
+template <typename Input>
+inline void ssubscribe_range(Connection &connection, Input first, Input last) {
+    if (first == last) {
+        throw Error("SSUBSCRIBE: no key specified");
+    }
+
+    CmdArgs args;
+    args << "SSUBSCRIBE" << std::make_pair(first, last);
+
+    connection.send(args);
+}
+
+inline void sunsubscribe(Connection &connection) {
+    connection.send("SUNSUBSCRIBE");
+}
+
+inline void sunsubscribe(Connection &connection, const StringView &channel) {
+    connection.send("SUNSUBSCRIBE %b", channel.data(), channel.size());
+}
+
+template <typename Input>
+inline void sunsubscribe_range(Connection &connection, Input first, Input last) {
+    if (first == last) {
+        throw Error("SUNSUBSCRIBE: no key specified");
+    }
+
+    CmdArgs args;
+    args << "SUNSUBSCRIBE" << std::make_pair(first, last);
 
     connection.send(args);
 }

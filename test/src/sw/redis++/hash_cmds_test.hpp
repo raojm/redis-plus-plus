@@ -51,8 +51,8 @@ void HashCmdTest<RedisInstance>::_test_hash() {
     auto f3 = std::string("f3");
     auto v3 = std::string("v3");
 
-    REDIS_ASSERT(_redis.hset(key, f1, v1), "failed to test hset");
-    REDIS_ASSERT(!_redis.hset(key, f1, v2), "failed to test hset with exist field");
+    REDIS_ASSERT(_redis.hset(key, f1, v1) == 1, "failed to test hset");
+    REDIS_ASSERT(_redis.hset(key, f1, v2) == 0, "failed to test hset with exist field");
 
     std::unordered_map<std::string, std::string> m = {{"ff1", "vv1"}, {"ff2", "vv2"}};
     REDIS_ASSERT(_redis.hset(key, m.begin(), m.end()) == 2, "failed to test hset");
@@ -69,7 +69,7 @@ void HashCmdTest<RedisInstance>::_test_hash() {
     REDIS_ASSERT(res && *res == v1, "failed to test hget");
 
     REDIS_ASSERT(!_redis.hexists(key, f3), "failed to test hexists");
-    REDIS_ASSERT(_redis.hset(key, std::make_pair(f3, v3)), "failed to test hset");
+    REDIS_ASSERT(_redis.hset(key, std::make_pair(f3, v3)) == 1, "failed to test hset");
     REDIS_ASSERT(_redis.hexists(key, f3), "failed to test hexists");
 
     REDIS_ASSERT(_redis.hlen(key) == 5, "failed to test hlen");
@@ -149,7 +149,7 @@ void HashCmdTest<RedisInstance>::_test_hscan() {
     _redis.hmset(key, items.begin(), items.end());
 
     std::unordered_map<std::string, std::string> item_map;
-    auto cursor = 0;
+    Cursor cursor = 0;
     while (true) {
         cursor = _redis.hscan(key, cursor, "f*", 2, std::inserter(item_map, item_map.end()));
         if (cursor == 0) {

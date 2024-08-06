@@ -17,10 +17,11 @@
 #ifndef SEWENEW_REDISPLUSPLUS_UTILS_H
 #define SEWENEW_REDISPLUSPLUS_UTILS_H
 
+#include <cstdint>
 #include <cstring>
 #include <string>
 #include <type_traits>
-#include "cxx_utils.h"
+#include "sw/redis++/cxx_utils.h"
 
 namespace sw {
 
@@ -183,6 +184,8 @@ template <typename T>
 struct IsAssociativeContainer
     : std::integral_constant<bool,
         HasInsert<T>::value && !HasPushBack<T>::value> {};
+
+using Cursor = unsigned long long;
 
 uint16_t crc16(const char *buf, int len);
 

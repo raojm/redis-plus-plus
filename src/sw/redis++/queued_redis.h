@@ -23,13 +23,13 @@
 #include <initializer_list>
 #include <vector>
 #include <unordered_set>
-#include "connection.h"
-#include "connection_pool.h"
-#include "utils.h"
-#include "reply.h"
-#include "command.h"
-#include "redis.h"
-#include "errors.h"
+#include "sw/redis++/connection.h"
+#include "sw/redis++/connection_pool.h"
+#include "sw/redis++/utils.h"
+#include "sw/redis++/reply.h"
+#include "sw/redis++/command.h"
+#include "sw/redis++/redis.h"
+#include "sw/redis++/errors.h"
 
 namespace sw {
 
@@ -260,22 +260,22 @@ public:
 
     // TODO: sort
 
-    QueuedRedis& scan(long long cursor,
+    QueuedRedis& scan(Cursor cursor,
                         const StringView &pattern,
                         long long count) {
         return command(cmd::scan, cursor, pattern, count);
     }
 
-    QueuedRedis& scan(long long cursor) {
+    QueuedRedis& scan(Cursor cursor) {
         return scan(cursor, "*", 10);
     }
 
-    QueuedRedis& scan(long long cursor,
+    QueuedRedis& scan(Cursor cursor,
                         const StringView &pattern) {
         return scan(cursor, pattern, 10);
     }
 
-    QueuedRedis& scan(long long cursor,
+    QueuedRedis& scan(Cursor cursor,
                         long long count) {
         return scan(cursor, "*", count);
     }
@@ -740,26 +740,26 @@ public:
     }
 
     QueuedRedis& hscan(const StringView &key,
-                        long long cursor,
+                        Cursor cursor,
                         const StringView &pattern,
                         long long count) {
         return command(cmd::hscan, key, cursor, pattern, count);
     }
 
     QueuedRedis& hscan(const StringView &key,
-                        long long cursor,
+                        Cursor cursor,
                         const StringView &pattern) {
         return hscan(key, cursor, pattern, 10);
     }
 
     QueuedRedis& hscan(const StringView &key,
-                        long long cursor,
+                        Cursor cursor,
                         long long count) {
         return hscan(key, cursor, "*", count);
     }
 
     QueuedRedis& hscan(const StringView &key,
-                        long long cursor) {
+                        Cursor cursor) {
         return hscan(key, cursor, "*", 10);
     }
 
@@ -930,26 +930,26 @@ public:
     }
 
     QueuedRedis& sscan(const StringView &key,
-                        long long cursor,
+                        Cursor cursor,
                         const StringView &pattern,
                         long long count) {
         return command(cmd::sscan, key, cursor, pattern, count);
     }
 
     QueuedRedis& sscan(const StringView &key,
-                    long long cursor,
+                    Cursor cursor,
                     const StringView &pattern) {
         return sscan(key, cursor, pattern, 10);
     }
 
     QueuedRedis& sscan(const StringView &key,
-                        long long cursor,
+                        Cursor cursor,
                         long long count) {
         return sscan(key, cursor, "*", count);
     }
 
     QueuedRedis& sscan(const StringView &key,
-                        long long cursor) {
+                        Cursor cursor) {
         return sscan(key, cursor, "*", 10);
     }
 
@@ -1250,26 +1250,26 @@ public:
     }
 
     QueuedRedis& zscan(const StringView &key,
-                        long long cursor,
+                        Cursor cursor,
                         const StringView &pattern,
                         long long count) {
         return command(cmd::zscan, key, cursor, pattern, count);
     }
 
     QueuedRedis& zscan(const StringView &key,
-                        long long cursor,
+                        Cursor cursor,
                         const StringView &pattern) {
         return zscan(key, cursor, pattern, 10);
     }
 
     QueuedRedis& zscan(const StringView &key,
-                        long long cursor,
+                        Cursor cursor,
                         long long count) {
         return zscan(key, cursor, "*", count);
     }
 
     QueuedRedis& zscan(const StringView &key,
-                        long long cursor) {
+                        Cursor cursor) {
         return zscan(key, cursor, "*", 10);
     }
 
@@ -2039,6 +2039,6 @@ private:
 
 }
 
-#include "queued_redis.hpp"
+#include "sw/redis++/queued_redis.hpp"
 
 #endif // end SEWENEW_REDISPLUSPLUS_QUEUED_REDIS_H

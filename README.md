@@ -1,8 +1,10 @@
 # redis-plus-plus
 
-[![Build Status](https://travis-ci.org/sewenew/redis-plus-plus.svg?branch=master)](https://travis-ci.org/sewenew/redis-plus-plus)
+[![Build Status](https://github.com/sewenew/redis-plus-plus/actions/workflows/build-and-test.yml/badge.svg)](https://github.com/sewenew/redis-plus-plus/actions/workflows/build-and-test.yml)
 
-[中文交流群](http://github.com/sewenew/redis-plus-plus/blob/master/Chinese.md)
+[中文交流群](https://github.com/sewenew/redis-plus-plus/blob/master/Chinese.md)
+
+I create a Redis module, named [redis-llm](https://github.com/sewenew/redis-llm), which integrates LLMs (Large Language Models) with Redis. You can [learn redis-plus-plus by asking questions with it](https://github.com/sewenew/redis-llm/tree/main/examples/search-application).
 
 - [Overview](#overview)
     - [Features](#features)
@@ -29,6 +31,7 @@
     - [Coroutine Interface](#coroutine-interface)
 - [Redis Patterns](#redis-patterns)
     - [Redlock](#redlock)
+- [Breaking Changes](#breaking-changes)
 - [Author](#author)
 
 ## Overview
@@ -205,6 +208,67 @@ Then you can build it the instructions (links) mentioned above. If you're buildi
 
 - Since 1.3.0, *redis-puls-plus* is built with C++17 by default, and you should also set your application code to be built with C++17. If you still want to build the *redis-plus-plus* with C++11, you can set the `REDIS_PLUS_PLUS_CXX_STANDARD` cmake option to 11.
 - TLS/SSL support has not been tested on Windows yet.
+
+##### Build with Visual Studio
+
+If you want to build the project with Visual Studio and have questions about it, please follow the steps below. The following is tested on Visual Studio 2022 Community. 
+
+```powershell
+# download two projects into this folder
+mkdir redis++
+
+cd redis++
+# make sure you create a hiredis first to work as a library
+mkdir hiredis-lib
+cd hiredis-lib
+mkdir lib
+
+git clone https://github.com/redis/hiredis.git
+cd hiredis
+```
+
+So far it should be fine with each step. Then open `CMakeLists.txt` file. Modify the following line and comment it out
+```txt
+...
+# SET(CMAKE_DEBUG_POSTFIX d)
+...
+```
+
+Then go back to hiredis project folder
+```powershell
+mkdir build
+cd build
+# convert project into visual studio 2022, if necessary choose you version e.g 19 2019 etc.
+cmake -G "Visual Studio 17 2022" ..
+./hiredis.sln
+```
+
+Set `hiredis` as Startup Project then click `Build Solution` in Debug Mode
+
+After successfull build, copy all the files under `Debug` into `hiredis-lib/lib` folder
+
+Here the work for hiredis should be finished.
+
+Then go back to `redis++` folder. Open Terminal here
+
+```powershell
+git clone https://github.com/sewenew/redis-plus-plus.git
+cd redis-plus-plus
+mkdir build
+cd build
+```
+
+Now you should always have openssl on your PC, otherwise can use chocolatey to install it. For Visual Studio 2022 please install pthread separately using `vpckg`, following this [link](https://github.com/microsoft/vcpkg)
+
+After all preparation. If you want to convert all projects then 
+```powershell
+cmake -DCMAKE_PREFIX_PATH="$(ABSOLUTE_PATH)\hiredis-lib" -G "Visual Studio 17 2022" ..
+cd build
+./redis++.sln
+```
+set `redis++_static` as Startup Project then click `Build Solution`
+
+So far build has been successfully finished!
 
 ##### The Order of Header Files
 
@@ -700,15 +764,26 @@ The *scheme* and *host* parts are required, and others are optional. If you're c
 
 **NOTE**: [Redis 6.0 supports ACL](https://redis.io/topics/acl), and you can specify a username for the connection. However, before Redis 6.0, you cannot do that.
 
-Also, the following connection options can be specified with the query string of URI, e.g. *tcp://127.0.0.1?keep_alive=true&socket_timeout=100ms&connect_timeout=100ms*:
+Also, the following connection options and connection pool options can be specified with the query string of URI, e.g. *tcp://127.0.0.1?keep_alive=true&socket_timeout=100ms&connect_timeout=100ms*:
 
-- `ConnectionOptions::keep_alive`: *false* by default.
-- `ConnectionOptions::socket_timeout`: *0ms* by default.
-- `ConnectionOptions::connect_timeout`: *0ms* by default.
+| Option | Parameter | Default |
+| :---------: | :---------: | :---------: |
+| `ConnectionOptions::user` | *user* | *default* |
+| `ConnectionOptions::password` | *password* | empty string, i.e. no password |
+| `ConnectionOptions::db` | *db* | 0 |
+| `ConnectionOptions::keep_alive` | *keep_alive* | false |
+| `ConnectionOptions::connect_timeout` | *connect_timeout* | 0ms |
+| `ConnectionOptions::socket_timeout` | *socket_timeout* | 0ms |
+| `ConnectionOptions::resp` | *resp* | 2 |
+| `ConnectionPoolOptions::size` | *pool_size* | 1 |
+| `ConnectionPoolOptions::wait_timeout` | *pool_wait_timeout* | 0ms |
+| `ConnectionPoolOptions::connection_lifetime` | *pool_connection_lifetime* | 0ms |
+| `ConnectionPoolOptions::connection_idle_time` | *pool_connection_idle_time* | 0ms |
 
-**NOTE**: Options specified in query string are case-sensitive, i.e. all key-value pairs must be in lowercase.
+**NOTE**:
 
-So far, you cannot specify connection pool options with URI, e.g. `ConnectionPoolOptions::size`.
+- Options specified in query string are case-sensitive, i.e. all key-value pairs must be in lowercase.
+- Options specified in query string, e.g. *user*, *password*, *db*, overwrites the one specified in URI. For example, *redis://127.0.0.1/1?db=3* means that all reads/writes run on the 3rd database, instead of the 1st one.
 
 ```C++
 // Single connection to the given host and port.
@@ -828,6 +903,10 @@ Then you can use this `ConnectionOptions` to create a `Redis` object to connect 
 
 By default, *redis-plus-plus* automatically initializes OpenSSL library, i.e. calls `SSL_library_init` and initializes locks if needed. However, your application code might already initialize OpenSSL library. In this case, you can call `tls::disable_auto_init()` to disable the initialization. You should call this function only once and call it before any other *redis-plus-plus* operation. Otherwise, the behavior is undefined.
 
+##### Skip Certificate Verification
+
+Since hiredis v1.1.0, it supports [skipping certificate verification](https://github.com/redis/hiredis/pull/1085). If you want to use this feature with *redis-plus-plus*, you can check [this issue](https://github.com/sewenew/redis-plus-plus/issues/183) for an example.
+
 ### Send Command to Redis Server
 
 You can send [Redis commands](https://redis.io/commands) through `Redis` object. `Redis` has one or more (overloaded) methods for each Redis command. The method has the same (lowercased) name as the corresponding command. For example, we have 3 overload methods for the `DEL key [key ...]` command:
@@ -867,7 +946,7 @@ Most of these methods have the same parameters as the corresponding commands. Th
 
 ##### StringView
 
-[std::string_view](http://en.cppreference.com/w/cpp/string/basic_string_view) is a good choice for read-only string parameter types. `std::string_view` was however only introduced in the C++ 17 standard, so if you build *redis-plus-plus* with the `-std=c++11` (i.e. by specifying `-DREDIS_PLUS_PLUS_CXX_STANDARD=11` with cmake command) or the `-std=c++14` standard, a [simple implementation](https://github.com/sewenew/redis-plus-plus/blob/master/src/sw/redis%2B%2B/cxx11/cxx_utils.h) of `std::string_view`, called `StringView`, is available. You could build *redis-plus-plus* with the `-std=c++17` standard (i.e. the default behavior), which will supply `std::string_view` natively. The `StringView` implementation will then be disregarded by aliasing it to `std::string_view`. This is done inside the *redis-plus-plus* library with: `using StringView = std::string_view`.
+[std::string_view](https://en.cppreference.com/w/cpp/string/basic_string_view) is a good choice for read-only string parameter types. `std::string_view` was however only introduced in the C++ 17 standard, so if you build *redis-plus-plus* with the `-std=c++11` (i.e. by specifying `-DREDIS_PLUS_PLUS_CXX_STANDARD=11` with cmake command) or the `-std=c++14` standard, a [simple implementation](https://github.com/sewenew/redis-plus-plus/blob/master/src/sw/redis%2B%2B/cxx11/cxx_utils.h) of `std::string_view`, called `StringView`, is available. You could build *redis-plus-plus* with the `-std=c++17` standard (i.e. the default behavior), which will supply `std::string_view` natively. The `StringView` implementation will then be disregarded by aliasing it to `std::string_view`. This is done inside the *redis-plus-plus* library with: `using StringView = std::string_view`.
 
 Since there are conversions from `std::string` and c-style string to `StringView`, you can just pass `std::string` or c-style string to methods that need a `StringView` parameter.
 
@@ -917,7 +996,7 @@ As we mentioned above, replies are parsed into return values of these methods. T
 ##### Boolean Return Value
 
 The return type of some methods, e.g. `EXPIRE`, `HSET`, is `bool`. If the method returns `false`, it DOES NOT mean that `Redis` failed to send the command to Redis server. Instead, it means that Redis server returns an *Integer Reply*, and the value of the reply is `0`. Accordingly, if the method returns `true`, it means that Redis server returns an *Integer Reply*, and the value of the reply is `1`. You can 
-check [Redis commands manual](http://redis.io/commands) for what do `0` and `1` stand for.
+check [Redis commands manual](https://redis.io/commands) for what do `0` and `1` stand for.
 
 For example, when we send `EXPIRE` command to Redis server, it returns `1` if the timeout was set, and it returns `0` if the key doesn't exist. Accordingly, if the timeout was set, `Redis::expire` returns `true`, and if the key doesn't exist, `Redis::expire` returns `false`.
 
@@ -925,7 +1004,7 @@ So, never use the return value to check if the command has been successfully sen
 
 ##### Optional
 
-[std::optional](http://en.cppreference.com/w/cpp/utility/optional) is a good option for return type, if Redis might return *NULL REPLY*. However, `std::optional` is introduced in C++ 17 standard, and if you build *redis-plus-plus* with `-std=c++11` standard (i.e. by specifying `-DREDIS_PLUS_PLUS_CXX_STANDARD=11` with cmake command), we implement our own [simple version](https://github.com/sewenew/redis-plus-plus/blob/master/src/sw/redis%2B%2B/cxx11/cxx_utils.h), i.e. `template Optional<T>`. Instead, if you build *redis-plus-plus* with `-std=c++17` standard (i.e. the default behavior), you can use `std::optional`, and we have an alias for it: `template <typename T> using Optional = std::optional<T>`.
+[std::optional](https://en.cppreference.com/w/cpp/utility/optional) is a good option for return type, if Redis might return *NULL REPLY*. However, `std::optional` is introduced in C++ 17 standard, and if you build *redis-plus-plus* with `-std=c++11` standard (i.e. by specifying `-DREDIS_PLUS_PLUS_CXX_STANDARD=11` with cmake command), we implement our own [simple version](https://github.com/sewenew/redis-plus-plus/blob/master/src/sw/redis%2B%2B/cxx11/cxx_utils.h), i.e. `template Optional<T>`. Instead, if you build *redis-plus-plus* with `-std=c++17` standard (i.e. the default behavior), you can use `std::optional`, and we have an alias for it: `template <typename T> using Optional = std::optional<T>`.
 
 Take the [GET](https://redis.io/commands/get) and [MGET](https://redis.io/commands/mget) commands for example:
 
@@ -1257,7 +1336,7 @@ redis.smembers("s1", std::back_inserter(s_vec));
 ##### SCAN Commands
 
 ```C++
-auto cursor = 0LL;
+sw::redis::Cursor cursor = 0;
 auto pattern = "*pattern*";
 auto count = 5;
 std::unordered_set<std::string> keys;
@@ -1672,7 +1751,7 @@ pipe.set("key", "val").incr("num");
 auto replies = pipe.exec();
 
 // The same as:
-replies = pipe.set("key", "val").incr("num).exec();
+replies = pipe.set("key", "val").incr("num").exec();
 ```
 
 In fact, these commands won't be sent to Redis, until you call `Pipeline::exec`. So `Pipeline::exec` does 2 work in order: send all piped commands, then get all replies from Redis.
@@ -2386,6 +2465,24 @@ If you have any problem on sending stream commands to Redis, please feel free to
 
 [Redis Modules](https://redis.io/modules) enrich Redis. However, *redis-plus-plus* does not have built-in support/method for these modules, although you can use the [generic interface](#generic-command-interface) to send commands related to these modules.
 
+The generic command interface uses the second argument as the key for hashing. If your custom command places the key at a different argument (i.e.: `module-name create key1 arg1 arg2`), and you are using the `RedisCluster` client, then it will fail to send the command to the correct Redis instance. In this case you could use the following work-around:
+
+```c++
+auto redis_cluster = RedisCluster("tcp://127.0.0.1:6379");
+
+std::vector<std::string> raw_cmd;
+raw_cmd.push_back("module-name");
+raw_cmd.push_back("create");
+raw_cmd.push_back("key1");
+raw_cmd.push_back("arg1");
+raw_cmd.push_back("arg2");
+
+// create it with a connection from the underlying connection pool
+auto redis = redis_cluster.redis("key1", false);
+
+redis.command<void>(raw_cmd.begin(), raw_cmd.end());
+```
+
 Fortunately, [@wingunder](https://github.com/wingunder) did a great job to make the work easier. He wrote [redis-plus-plus-modules](https://github.com/wingunder/redis-plus-plus-modules), which is a header only project that has built-in support for some popular modules. If you need to work with Redis Modules, you should have a try.
 
 @wingunder also contributes a lot to *redis-plus-plus*. Many thanks to @wingunder!
@@ -2477,7 +2574,7 @@ async_redis.get("key", [](Future<OptionalString> &&fut) {
 unordered_map<string, string> m = {{"a", "b"}, {"c", "d"}};
 Future<void> hmset_res = async_redis.hmset("hash", m.begin(), m.end());
 
-auto hgetall_res = async_redis.hgetall<vector<string>>("hash");
+auto hgetall_res = async_redis.hgetall<std::unordered_map<std::string, std::string>>("hash");
 
 cout << ping_res.get() << endl;
 cout << set_res.get() << endl;
@@ -2490,7 +2587,7 @@ else
 hmset_res.get();
 
 for (const auto &ele : hgetall_res.get())
-    cout << ele << endl;
+    cout << ele.first << "\t" << ele.second << endl;
 
 // Generic interface.
 
@@ -2582,7 +2679,14 @@ auto mget_res = async_cluster.mget<std::vector<OptionalString>>({"{hashtag}key1"
 
 unordered_map<string, string> m = {{"a", "b"}, {"c", "d"}};
 Future<void> hmset_res = async_redis.hmset("hash", m.begin(), m.end());
+
+// Create an AsyncRedis object with hash-tag, so that we can send commands that has no key.
+// It connects to Redis instance that holds the given key, i.e. hash-tag.
+auto r = async_cluster.redis("hash-tag");
+Future<string> ping_res = r.command<string>("ping");
 ```
+
+**NOTE**: By default, when you use `AsyncRedisCluster::redis(const StringView &hash_tag, bool new_connection = true)` to create an `AsyncRedis` object, instead of picking a connection from the underlying connection pool, it creates a new connection to the corresponding Redis server. So this is NOT a cheap operation, and you should try to reuse this newly created `AsyncRedis` object as much as possible. If you pass `false` as the second parameter, you can create a `AsyncRedis` object without creating a new connection. However, in this case, you should be very careful, otherwise, you might get bad performance or even dead lock. Please carefully check the related [pipeline section](#very-important-notes) before using this feature. Also the returned `AsyncRedis` object is NOT thread-safe, and if it throws exception, you need to destroy it, and create a new one with the `AsyncRedisCluster::redis` method.
 
 #### Async Subscriber
 
@@ -2713,6 +2817,8 @@ fut.get();
 ### Coroutine Interface
 
 *redis-plus-plus* also supports coroutine interface, however, coroutine support for Subscriber and Transaction is still on the way.
+
+**NOTE**: Coroutine support is still experimental, and the interface might be changed in the future.
 
 #### Installation
 
@@ -2886,7 +2992,7 @@ struct RedMutexOptions {
 };
 ```
 
-- *ttl*: Expiration of the key. 3 seconds by default. If you set this value too large, and the client crashes, other clients need to wait a long time before they can acquire the lock. However, if your network performance is poor, you need a larger `ttl`, otherwise, you might fail to lock or fail to extend the lock., otherwise, you might fail to lock or fail to extend the lock., otherwise, you might fail to lock or fail to extend the lock., otherwise, you might fail to lock or fail to extend the lock.
+- *ttl*: Expiration of the key. 3 seconds by default. If you set this value too large, and the client crashes, other clients need to wait a long time before they can acquire the lock. However, if your network performance is poor, you need a larger `ttl`, otherwise, you might fail to lock or fail to extend the lock.
 - *retry_delay*: `RedMutex::lock` repeat trying to lock until it acquires the lock. If it fails, it wait `retry_delay` before the next retrying. 100 milliseconds by default.
 - *scripting*: True (default behavior), if using Lua scripting to implement Redlock algorithm. otherwise, use Redis transaction to implement it. It's recommended to use Lua scripting version, which should be much faster than transaction version.
 
@@ -2895,6 +3001,11 @@ struct RedMutexOptions {
 `LockWatcher` *watches* `RedMutex`, and try to extend the lock from time to time. You can construct `RedMutex` with a `std::shared_ptr<LockWatcher>`, so that it will watch the corresponding Redlock. `LockWatcher` does the work in a background thread. So creating a `LockWatcher` object also creates a `std::thread`. If you want to avoid creating multiple threads, you can construct multiple `RedMutex` with the same `std::shared_ptr<LockWatcher>`.
 
 If you don't specify `LockWatcher`, `RedMutex` will create one (the default behavior), and start a thread. Although it's expensive to create thread, it's still quite cheap compared to acquiring a distributed lock.
+
+##### Undefined Behaviors
+
+- `RedMutex` is NOT reentrant. If you try to lock a mutex which has already been locked by the current thread, the behavior is undefined.
+- If you try to unlock a mutex which has not been locked by the current thread, the behavior is undefined.
 
 ##### Examples
 
@@ -2939,7 +3050,7 @@ try {
                 },
                 opts, watcher);
 
-        std::unique_lock<RedMutex> lock(mtx);
+        std::unique_lock<RedMutex> lock(mtx, std::defer_lock);
 
         lock.lock();
 
@@ -2987,6 +3098,10 @@ try {
     lock.unlock();
 }
 ```
+
+## Breaking Changes
+
+- Since redis-plus-plus 1.3.9, all `hset` related methods return `long long` instead of `bool`.
 
 ## Author
 

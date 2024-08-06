@@ -46,6 +46,7 @@
 #include "pipeline_transaction_test.h"
 #include "threads_test.h"
 #include "stream_cmds_test.h"
+#include "cluster_test.h"
 #include "benchmark_test.h"
 
 #ifdef REDIS_PLUS_PLUS_RUN_ASYNC_TEST
@@ -321,7 +322,6 @@ auto parse_options(int argc, char **argv)
 
             default:
                 throw sw::redis::Error("Unknown command line option");
-                break;
             }
         } catch (const sw::redis::Error &e) {
             print_help();
@@ -452,6 +452,11 @@ void run_test(const sw::redis::ConnectionOptions &opts, const TestOptions &test_
     stream_test.run();
 
     std::cout << "Pass stream commands tests" << std::endl;
+
+    sw::redis::test::ClusterTest<RedisInstance> cluster_test(instance);
+    cluster_test.run();
+
+    std::cout << "Pass cluster specific tests" << std::endl;
 }
 
 template <typename RedisInstance>

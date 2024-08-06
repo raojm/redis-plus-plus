@@ -18,15 +18,29 @@
 #define SEWENEW_REDISPLUSPLUS_REDIS_CLUSTER_HPP
 
 #include <utility>
-#include "command.h"
-#include "reply.h"
-#include "utils.h"
-#include "errors.h"
-#include "shards_pool.h"
+#include "sw/redis++/command.h"
+#include "sw/redis++/reply.h"
+#include "sw/redis++/utils.h"
+#include "sw/redis++/errors.h"
+#include "sw/redis++/shards_pool.h"
 
 namespace sw {
 
 namespace redis {
+
+template <typename Callback>
+void RedisCluster::for_each(Callback &&cb) {
+    // Update the underlying slot-node mapping to ensure we get the latest one.
+    _pool->update();
+
+    auto pools = _pool->pools();
+    for (auto &pool : pools) {
+        auto connection = std::make_shared<GuardedConnection>(pool);
+        auto r = Redis(connection);
+
+        cb(r);
+    }
+}
 
 template <typename Cmd, typename Key, typename ...Args>
 auto RedisCluster::command(Cmd cmd, Key &&key, Args &&...args)
@@ -340,36 +354,36 @@ inline void RedisCluster::hmset(const StringView &key, Input first, Input last) 
 }
 
 template <typename Output>
-long long RedisCluster::hscan(const StringView &key,
-                        long long cursor,
-                        const StringView &pattern,
-                        long long count,
-                        Output output) {
+Cursor RedisCluster::hscan(const StringView &key,
+                     Cursor cursor,
+                     const StringView &pattern,
+                     long long count,
+                     Output output) {
     auto reply = command(cmd::hscan, key, cursor, pattern, count);
 
     return reply::parse_scan_reply(*reply, output);
 }
 
 template <typename Output>
-inline long long RedisCluster::hscan(const StringView &key,
-                                long long cursor,
-                                const StringView &pattern,
-                                Output output) {
+inline Cursor RedisCluster::hscan(const StringView &key,
+                             Cursor cursor,
+                             const StringView &pattern,
+                             Output output) {
     return hscan(key, cursor, pattern, 10, output);
 }
 
 template <typename Output>
-inline long long RedisCluster::hscan(const StringView &key,
-                                long long cursor,
-                                long long count,
-                                Output output) {
+inline Cursor RedisCluster::hscan(const StringView &key,
+                             Cursor cursor,
+                             long long count,
+                             Output output) {
     return hscan(key, cursor, "*", count, output);
 }
 
 template <typename Output>
-inline long long RedisCluster::hscan(const StringView &key,
-                                long long cursor,
-                                Output output) {
+inline Cursor RedisCluster::hscan(const StringView &key,
+                             Cursor cursor,
+                             Output output) {
     return hscan(key, cursor, "*", 10, output);
 }
 
@@ -473,36 +487,36 @@ long long RedisCluster::srem(const StringView &key, Input first, Input last) {
 }
 
 template <typename Output>
-long long RedisCluster::sscan(const StringView &key,
-                        long long cursor,
-                        const StringView &pattern,
-                        long long count,
-                        Output output) {
+Cursor RedisCluster::sscan(const StringView &key,
+                     Cursor cursor,
+                     const StringView &pattern,
+                     long long count,
+                     Output output) {
     auto reply = command(cmd::sscan, key, cursor, pattern, count);
 
     return reply::parse_scan_reply(*reply, output);
 }
 
 template <typename Output>
-inline long long RedisCluster::sscan(const StringView &key,
-                                long long cursor,
-                                const StringView &pattern,
-                                Output output) {
+inline Cursor RedisCluster::sscan(const StringView &key,
+                             Cursor cursor,
+                             const StringView &pattern,
+                             Output output) {
     return sscan(key, cursor, pattern, 10, output);
 }
 
 template <typename Output>
-inline long long RedisCluster::sscan(const StringView &key,
-                                long long cursor,
-                                long long count,
-                                Output output) {
+inline Cursor RedisCluster::sscan(const StringView &key,
+                             Cursor cursor,
+                             long long count,
+                             Output output) {
     return sscan(key, cursor, "*", count, output);
 }
 
 template <typename Output>
-inline long long RedisCluster::sscan(const StringView &key,
-                                long long cursor,
-                                Output output) {
+inline Cursor RedisCluster::sscan(const StringView &key,
+                             Cursor cursor,
+                             Output output) {
     return sscan(key, cursor, "*", 10, output);
 }
 
@@ -730,36 +744,36 @@ void RedisCluster::zrevrangebyscore(const StringView &key,
 }
 
 template <typename Output>
-long long RedisCluster::zscan(const StringView &key,
-                        long long cursor,
-                        const StringView &pattern,
-                        long long count,
-                        Output output) {
+Cursor RedisCluster::zscan(const StringView &key,
+                     Cursor cursor,
+                     const StringView &pattern,
+                     long long count,
+                     Output output) {
     auto reply = command(cmd::zscan, key, cursor, pattern, count);
 
     return reply::parse_scan_reply(*reply, output);
 }
 
 template <typename Output>
-inline long long RedisCluster::zscan(const StringView &key,
-                                long long cursor,
-                                const StringView &pattern,
-                                Output output) {
+inline Cursor RedisCluster::zscan(const StringView &key,
+                             Cursor cursor,
+                             const StringView &pattern,
+                             Output output) {
     return zscan(key, cursor, pattern, 10, output);
 }
 
 template <typename Output>
-inline long long RedisCluster::zscan(const StringView &key,
-                                long long cursor,
-                                long long count,
-                                Output output) {
+inline Cursor RedisCluster::zscan(const StringView &key,
+                             Cursor cursor,
+                             long long count,
+                             Output output) {
     return zscan(key, cursor, "*", count, output);
 }
 
 template <typename Output>
-inline long long RedisCluster::zscan(const StringView &key,
-                                long long cursor,
-                                Output output) {
+inline Cursor RedisCluster::zscan(const StringView &key,
+                             Cursor cursor,
+                             Output output) {
     return zscan(key, cursor, "*", 10, output);
 }
 
@@ -1332,29 +1346,34 @@ template <typename Cmd, typename ...Args>
 ReplyUPtr RedisCluster::_command(Cmd cmd, const StringView &key, Args &&...args) {
     for (auto idx = 0; idx < 2; ++idx) {
         try {
-            auto pool = _pool.fetch(key);
+            auto pool = _pool->fetch(key);
             assert(pool);
             SafeConnection safe_connection(*pool);
 
             return _command(cmd, safe_connection.connection(), std::forward<Args>(args)...);
+        } catch (const SlotUncoveredError &) {
+            // Some slot is not covered, update asynchronously to see if new node added.
+            // Check https://github.com/sewenew/redis-plus-plus/issues/255 for detail.
+            // TODO: should we replace other 'update's with 'async_update's?
+            _pool->async_update();
         } catch (const IoError &) {
             // When master is down, one of its replicas will be promoted to be the new master.
             // If we try to send command to the old master, we'll get an *IoError*.
             // In this case, we need to update the slots mapping.
-            _pool.update();
+            _pool->update();
         } catch (const ClosedError &) {
             // Node might be removed.
             // 1. Get up-to-date slot mapping to check if the node still exists.
-            _pool.update();
+            _pool->update();
 
             // TODO:
             // 2. If it's NOT exist, update slot mapping, and retry.
             // 3. If it's still exist, that means the node is down, NOT removed, throw exception.
         } catch (const MovedError &) {
             // Slot mapping has been changed, update it and try again.
-            _pool.update();
+            _pool->update();
         } catch (const AskError &err) {
-            auto pool = _pool.fetch(err.node());
+            auto pool = _pool->fetch(err.node());
             assert(pool);
             SafeConnection safe_connection(*pool);
             auto &connection = safe_connection.connection();
@@ -1375,7 +1394,8 @@ ReplyUPtr RedisCluster::_command(Cmd cmd, const StringView &key, Args &&...args)
     // 1. Source node has already run 'CLUSTER SETSLOT xxx NODE xxx',
     //    while the destination node has NOT run it.
     //    In this case, client will be redirected by both nodes with MovedError.
-    // 2. Other failures...
+    // 2. Node is down, e.g. master is down, and new master has not been elected yet.
+    // 3. Other failures...
     throw Error("Failed to send command with key: " + std::string(key.data(), key.size()));
 }
 

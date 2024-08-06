@@ -28,7 +28,7 @@
 #include <thread>
 #include <vector>
 #include <functional>
-#include "../redis++.h"
+#include "sw/redis++/redis++.h"
 
 namespace sw {
 
@@ -588,13 +588,13 @@ private:
 
     void _reschedule_tasks(std::vector<Task> &tasks);
 
-    std::thread _watcher_thread;
-
     std::priority_queue<Task> _tasks;
 
     std::mutex _mtx;
 
     std::condition_variable _cv;
+
+    std::thread _watcher_thread;
 };
 
 }

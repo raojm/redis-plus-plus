@@ -18,13 +18,17 @@
 #define SEWENEW_REDISPLUSPLUS_SHARDS_POOL_H
 
 #include <cassert>
+#include <condition_variable>
+#include <mutex>
+#include <thread>
 #include <unordered_map>
 #include <string>
 #include <random>
 #include <memory>
-#include "reply.h"
-#include "connection_pool.h"
-#include "shards.h"
+#include <vector>
+#include "sw/redis++/reply.h"
+#include "sw/redis++/connection_pool.h"
+#include "sw/redis++/shards.h"
 
 namespace sw {
 
@@ -37,10 +41,10 @@ public:
     ShardsPool(const ShardsPool &that) = delete;
     ShardsPool& operator=(const ShardsPool &that) = delete;
 
-    ShardsPool(ShardsPool &&that);
-    ShardsPool& operator=(ShardsPool &&that);
+    ShardsPool(ShardsPool &&that) = delete;
+    ShardsPool& operator=(ShardsPool &&that) = delete;
 
-    ~ShardsPool() = default;
+    ~ShardsPool();
 
     ShardsPool(const ConnectionPoolOptions &pool_opts,
                 const ConnectionOptions &connection_opts,
@@ -63,9 +67,11 @@ public:
 
     Shards shards();
 
-private:
-    void _move(ShardsPool &&that);
+    std::vector<ConnectionPoolSPtr> pools();
 
+    void async_update();
+
+private:
     void _init_pool(const Shards &shards);
 
     Shards _cluster_slots(Connection &connection) const;
@@ -99,6 +105,10 @@ private:
 
     NodeMap::iterator _add_node(const Node &node);
 
+    void _run();
+
+    void _do_async_update();
+
     ConnectionPoolOptions _pool_opts;
 
     ConnectionOptions _connection_opts;
@@ -107,12 +117,25 @@ private:
 
     NodeMap _pools;
 
+    enum class UpdateStatus {
+        STALE = 0,
+        UPDATED,
+        STOP
+    };
+    UpdateStatus _update_status = UpdateStatus::UPDATED;
+
+    std::thread _worker;
+
+    std::condition_variable _cv;
+
     std::mutex _mutex;
 
     Role _role = Role::MASTER;
 
     static const std::size_t SHARDS = 16383;
 };
+
+using ShardsPoolUPtr = std::unique_ptr<ShardsPool>;
 
 }
 

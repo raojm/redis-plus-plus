@@ -22,14 +22,15 @@
 #include <memory>
 #include <initializer_list>
 #include <tuple>
-#include "connection_pool.h"
-#include "reply.h"
-#include "command_options.h"
-#include "utils.h"
-#include "subscriber.h"
-#include "pipeline.h"
-#include "transaction.h"
-#include "sentinel.h"
+#include "sw/redis++/connection_pool.h"
+#include "sw/redis++/reply.h"
+#include "sw/redis++/command_options.h"
+#include "sw/redis++/utils.h"
+#include "sw/redis++/subscriber.h"
+#include "sw/redis++/pipeline.h"
+#include "sw/redis++/transaction.h"
+#include "sw/redis++/sentinel.h"
+#include "sw/redis++/redis_uri.h"
 
 namespace sw {
 
@@ -60,7 +61,7 @@ public:
     ///            unix://[[username:]password@]path-to-unix-domain-socket[/db]
     /// @see https://github.com/sewenew/redis-plus-plus/issues/37
     /// @see https://github.com/sewenew/redis-plus-plus#connection
-    explicit Redis(const std::string &uri);
+    explicit Redis(const std::string &uri) : Redis(Uri(uri)) {}
 
     /// @brief Construct `Redis` instance with Redis sentinel, i.e. get node info from sentinel.
     /// @param sentinel `Sentinel` instance.
@@ -221,8 +222,9 @@ public:
     void bgrewriteaof();
 
     /// @brief Save database in the background.
+    /// @return *Background saving started* if BGSAVE started correctly.
     /// @see https://redis.io/commands/bgsave
-    void bgsave();
+    std::string bgsave();
 
     /// @brief Get the size of the currently selected database.
     /// @return Number of keys in currently selected database.
@@ -478,7 +480,7 @@ public:
     ///
     /// Example:
     /// @code{.cpp}
-    /// auto cursor = 0LL;
+    /// sw::redis::Cursor cursor = 0;
     /// std::unordered_set<std::string> keys;
     /// while (true) {
     ///     cursor = redis.scan(cursor, "pattern:*", 10, std::inserter(keys, keys.begin()));
@@ -495,10 +497,10 @@ public:
     /// @see https://redis.io/commands/scan
     /// TODO: support the TYPE option for Redis 6.0.
     template <typename Output>
-    long long scan(long long cursor,
-                    const StringView &pattern,
-                    long long count,
-                    Output output);
+    Cursor scan(Cursor cursor,
+                 const StringView &pattern,
+                 long long count,
+                 Output output);
 
     /// @brief Scan all keys of the database.
     /// @param cursor Cursor.
@@ -506,8 +508,8 @@ public:
     /// @return The cursor to be used for the next scan operation.
     /// @see https://redis.io/commands/scan
     template <typename Output>
-    long long scan(long long cursor,
-                    Output output);
+    Cursor scan(Cursor cursor,
+                 Output output);
 
     /// @brief Scan keys of the database matching the given pattern.
     /// @param cursor Cursor.
@@ -516,9 +518,9 @@ public:
     /// @return The cursor to be used for the next scan operation.
     /// @see https://redis.io/commands/scan
     template <typename Output>
-    long long scan(long long cursor,
-                    const StringView &pattern,
-                    Output output);
+    Cursor scan(Cursor cursor,
+                 const StringView &pattern,
+                 Output output);
 
     /// @brief Scan keys of the database matching the given pattern.
     /// @param cursor Cursor.
@@ -527,9 +529,9 @@ public:
     /// @return The cursor to be used for the next scan operation.
     /// @see https://redis.io/commands/scan
     template <typename Output>
-    long long scan(long long cursor,
-                    long long count,
-                    Output output);
+    Cursor scan(Cursor cursor,
+                 long long count,
+                 Output output);
 
     /// @brief Update the last access time of the given key.
     /// @param key Key.
@@ -1488,7 +1490,7 @@ public:
     ///
     /// Example:
     /// @code{.cpp}
-    /// auto cursor = 0LL;
+    /// sw::redis::Cursor cursor = 0;
     /// std::unordered_map<std::string, std::string> kvs;
     /// while (true) {
     ///     cursor = redis.hscan("hash", cursor, "pattern:*", 10, std::inserter(kvs, kvs.begin()));
@@ -1505,11 +1507,11 @@ public:
     /// @return The cursor to be used for the next scan operation.
     /// @see https://redis.io/commands/hscan
     template <typename Output>
-    long long hscan(const StringView &key,
-                    long long cursor,
-                    const StringView &pattern,
-                    long long count,
-                    Output output);
+    Cursor hscan(const StringView &key,
+                 Cursor cursor,
+                 const StringView &pattern,
+                 long long count,
+                 Output output);
 
     /// @brief Scan fields of the given hash matching the given pattern.
     /// @param key Key where the hash is stored.
@@ -1519,10 +1521,10 @@ public:
     /// @return The cursor to be used for the next scan operation.
     /// @see https://redis.io/commands/hscan
     template <typename Output>
-    long long hscan(const StringView &key,
-                    long long cursor,
-                    const StringView &pattern,
-                    Output output);
+    Cursor hscan(const StringView &key,
+                 Cursor cursor,
+                 const StringView &pattern,
+                 Output output);
 
     /// @brief Scan all fields of the given hash.
     /// @param key Key where the hash is stored.
@@ -1532,10 +1534,10 @@ public:
     /// @return The cursor to be used for the next scan operation.
     /// @see https://redis.io/commands/hscan
     template <typename Output>
-    long long hscan(const StringView &key,
-                    long long cursor,
-                    long long count,
-                    Output output);
+    Cursor hscan(const StringView &key,
+                 Cursor cursor,
+                 long long count,
+                 Output output);
 
     /// @brief Scan all fields of the given hash.
     /// @param key Key where the hash is stored.
@@ -1544,36 +1546,28 @@ public:
     /// @return The cursor to be used for the next scan operation.
     /// @see https://redis.io/commands/hscan
     template <typename Output>
-    long long hscan(const StringView &key,
-                    long long cursor,
-                    Output output);
+    Cursor hscan(const StringView &key,
+                 Cursor cursor,
+                 Output output);
 
     /// @brief Set hash field to value.
     /// @param key Key where the hash is stored.
     /// @param field Field.
     /// @param val Value.
     /// @return Whether the given field is a new field.
-    /// @retval true If the given field didn't exist, and a new field has been added.
-    /// @retval false If the given field already exists, and its value has been overwritten.
-    /// @note When `hset` returns false, it does not mean that the method failed to set the field.
-    ///       Instead, it means that the field already exists, and we've overwritten its value.
-    ///       If `hset` fails, it will throw an exception of `Exception` type.
-    /// @see https://github.com/sewenew/redis-plus-plus/issues/9
+    /// @retval 1 If the given field didn't exist, and a new field has been added.
+    /// @retval 0 If the given field already exists, and its value has been overwritten.
     /// @see https://redis.io/commands/hset
-    bool hset(const StringView &key, const StringView &field, const StringView &val);
+    long long hset(const StringView &key, const StringView &field, const StringView &val);
 
     /// @brief Set hash field to value.
     /// @param key Key where the hash is stored.
     /// @param item The field-value pair to be set.
     /// @return Whether the given field is a new field.
-    /// @retval true If the given field didn't exist, and a new field has been added.
-    /// @retval false If the given field already exists, and its value has been overwritten.
-    /// @note When `hset` returns false, it does not mean that the method failed to set the field.
-    ///       Instead, it means that the field already exists, and we've overwritten its value.
-    ///       If `hset` fails, it will throw an exception of `Exception` type.
-    /// @see https://github.com/sewenew/redis-plus-plus/issues/9
+    /// @retval 1 If the given field didn't exist, and a new field has been added.
+    /// @retval 0 If the given field already exists, and its value has been overwritten.
     /// @see https://redis.io/commands/hset
-    bool hset(const StringView &key, const std::pair<StringView, StringView> &item);
+    long long hset(const StringView &key, const std::pair<StringView, StringView> &item);
 
     /// @brief Set multiple fields of the given hash.
     ///
@@ -1881,7 +1875,7 @@ public:
     ///
     /// Example:
     /// @code{.cpp}
-    /// auto cursor = 0LL;
+    /// sw::redis::Cursor cursor = 0;
     /// std::unordered_set<std::string> members;
     /// while (true) {
     ///     cursor = redis.sscan("set", cursor, "pattern:*",
@@ -1899,11 +1893,11 @@ public:
     /// @return The cursor to be used for the next scan operation.
     /// @see https://redis.io/commands/sscan
     template <typename Output>
-    long long sscan(const StringView &key,
-                    long long cursor,
-                    const StringView &pattern,
-                    long long count,
-                    Output output);
+    Cursor sscan(const StringView &key,
+                 Cursor cursor,
+                 const StringView &pattern,
+                 long long count,
+                 Output output);
 
     /// @brief Scan members of the set matching the given pattern.
     /// @param key Key where the set is stored.
@@ -1913,10 +1907,10 @@ public:
     /// @return The cursor to be used for the next scan operation.
     /// @see https://redis.io/commands/sscan
     template <typename Output>
-    long long sscan(const StringView &key,
-                    long long cursor,
-                    const StringView &pattern,
-                    Output output);
+    Cursor sscan(const StringView &key,
+                 Cursor cursor,
+                 const StringView &pattern,
+                 Output output);
 
     /// @brief Scan all members of the given set.
     /// @param key Key where the set is stored.
@@ -1926,10 +1920,10 @@ public:
     /// @return The cursor to be used for the next scan operation.
     /// @see https://redis.io/commands/sscan
     template <typename Output>
-    long long sscan(const StringView &key,
-                    long long cursor,
-                    long long count,
-                    Output output);
+    Cursor sscan(const StringView &key,
+                 Cursor cursor,
+                 long long count,
+                 Output output);
 
     /// @brief Scan all members of the given set.
     /// @param key Key where the set is stored.
@@ -1938,9 +1932,9 @@ public:
     /// @return The cursor to be used for the next scan operation.
     /// @see https://redis.io/commands/sscan
     template <typename Output>
-    long long sscan(const StringView &key,
-                    long long cursor,
-                    Output output);
+    Cursor sscan(const StringView &key,
+                 Cursor cursor,
+                 Output output);
 
     /// @brief Get the union between the first set and all successive sets.
     /// @param first Iterator to the first set.
@@ -2817,7 +2811,7 @@ public:
     ///
     /// Example:
     /// @code{.cpp}
-    /// auto cursor = 0LL;
+    /// sw::redis::Cursor cursor = 0;
     /// std::vector<std::pair<std::string, double>> members;
     /// while (true) {
     ///     cursor = redis.zscan("zset", cursor, "pattern:*",
@@ -2835,11 +2829,11 @@ public:
     /// @return The cursor to be used for the next scan operation.
     /// @see https://redis.io/commands/zscan
     template <typename Output>
-    long long zscan(const StringView &key,
-                    long long cursor,
-                    const StringView &pattern,
-                    long long count,
-                    Output output);
+    Cursor zscan(const StringView &key,
+                 Cursor cursor,
+                 const StringView &pattern,
+                 long long count,
+                 Output output);
 
     /// @brief Scan members of the given sorted set matching the given pattern.
     /// @param key Key where the sorted set is stored.
@@ -2849,10 +2843,10 @@ public:
     /// @return The cursor to be used for the next scan operation.
     /// @see https://redis.io/commands/zscan
     template <typename Output>
-    long long zscan(const StringView &key,
-                    long long cursor,
-                    const StringView &pattern,
-                    Output output);
+    Cursor zscan(const StringView &key,
+                 Cursor cursor,
+                 const StringView &pattern,
+                 Output output);
 
     /// @brief Scan all members of the given sorted set.
     /// @param key Key where the sorted set is stored.
@@ -2862,10 +2856,10 @@ public:
     /// @return The cursor to be used for the next scan operation.
     /// @see https://redis.io/commands/zscan
     template <typename Output>
-    long long zscan(const StringView &key,
-                    long long cursor,
-                    long long count,
-                    Output output);
+    Cursor zscan(const StringView &key,
+                 Cursor cursor,
+                 long long count,
+                 Output output);
 
     /// @brief Scan all members of the given sorted set.
     /// @param key Key where the sorted set is stored.
@@ -2874,9 +2868,9 @@ public:
     /// @return The cursor to be used for the next scan operation.
     /// @see https://redis.io/commands/zscan
     template <typename Output>
-    long long zscan(const StringView &key,
-                    long long cursor,
-                    Output output);
+    Cursor zscan(const StringView &key,
+                 Cursor cursor,
+                 Output output);
 
     /// @brief Get the score of the given member.
     /// @param key Key where the sorted set is stored.
@@ -3258,6 +3252,8 @@ public:
 
     long long publish(const StringView &channel, const StringView &message);
 
+    long long spublish(const StringView &channel, const StringView &message);
+
     // Transaction commands.
     void watch(const StringView &key);
 
@@ -3607,6 +3603,8 @@ private:
     // For internal use.
     explicit Redis(const GuardedConnectionSPtr &connection);
 
+    explicit Redis(const Uri &uri);
+
     template <std::size_t ...Is, typename ...Args>
     ReplyUPtr _command(const StringView &cmd_name, const IndexSequence<Is...> &, Args &&...args) {
         return command(cmd_name, NthValue<Is>(std::forward<Args>(args)...)...);
@@ -3640,6 +3638,6 @@ private:
 
 }
 
-#include "redis.hpp"
+#include "sw/redis++/redis.hpp"
 
 #endif // end SEWENEW_REDISPLUSPLUS_REDIS_H

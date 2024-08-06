@@ -19,7 +19,7 @@
 
 #include <string>
 #include <map>
-#include "errors.h"
+#include "sw/redis++/errors.h"
 
 namespace sw {
 
@@ -106,6 +106,20 @@ public:
     AskError& operator=(AskError &&) = default;
 
     virtual ~AskError() override = default;
+};
+
+class SlotUncoveredError : public Error {
+public:
+    explicit SlotUncoveredError(Slot slot) :
+        Error("slot " + std::to_string(slot) + " is uncovered") {}
+
+    SlotUncoveredError(const SlotUncoveredError &) = default;
+    SlotUncoveredError& operator=(const SlotUncoveredError &) = default;
+
+    SlotUncoveredError(SlotUncoveredError &&) = default;
+    SlotUncoveredError& operator=(SlotUncoveredError &&) = default;
+
+    virtual ~SlotUncoveredError() override = default;
 };
 
 }

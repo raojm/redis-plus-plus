@@ -23,8 +23,8 @@
 #include <thread>
 #include <queue>
 #include <memory>
-#include "shards_pool.h"
-#include "async_connection_pool.h"
+#include "sw/redis++/shards_pool.h"
+#include "sw/redis++/async_connection_pool.h"
 
 namespace sw {
 
@@ -35,8 +35,8 @@ public:
     AsyncShardsPool(const AsyncShardsPool &) = delete;
     AsyncShardsPool& operator=(const AsyncShardsPool &) = delete;
 
-    AsyncShardsPool(AsyncShardsPool &&that);
-    AsyncShardsPool& operator=(AsyncShardsPool &&that);
+    AsyncShardsPool(AsyncShardsPool &&that) = delete;
+    AsyncShardsPool& operator=(AsyncShardsPool &&that) = delete;
 
     ~AsyncShardsPool();
 
@@ -53,6 +53,8 @@ public:
 
     void update(const std::string &key, AsyncEventUPtr event);
 
+    void update();
+
     ConnectionOptions connection_options(const StringView &key);
 
     ConnectionOptions connection_options();
@@ -64,8 +66,6 @@ private:
     };
 
     void _run();
-
-    void _move(AsyncShardsPool &&that);
 
     Slot _slot(const StringView &key) const;
 
@@ -105,7 +105,7 @@ private:
 
     NodeMap _pools;
 
-    EventLoopSPtr _loop;
+    EventLoopWPtr _loop;
 
     std::thread _worker;
 

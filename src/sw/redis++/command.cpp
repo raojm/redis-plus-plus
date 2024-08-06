@@ -14,7 +14,7 @@
    limitations under the License.
  *************************************************************************/
 
-#include "command.h"
+#include "sw/redis++/command.h"
 #include <cassert>
 
 namespace sw {
@@ -347,7 +347,6 @@ void set_geo_unit(CmdArgs &args, GeoUnit unit) {
 
     default:
         throw Error("Unknown geo unit type");
-        break;
     }
 }
 

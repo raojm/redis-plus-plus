@@ -14,11 +14,11 @@
    limitations under the License.
  *************************************************************************/
 
-#include "async_connection.h"
+#include "sw/redis++/async_connection.h"
 #include <hiredis/async.h>
-#include "errors.h"
-#include "async_shards_pool.h"
-#include "cmd_formatter.h"
+#include "sw/redis++/errors.h"
+#include "sw/redis++/async_shards_pool.h"
+#include "sw/redis++/cmd_formatter.h"
 
 #ifdef _MSC_VER
 
@@ -132,7 +132,6 @@ AsyncConnection::AsyncConnection(const ConnectionOptions &opts,
 
     default:
         throw Error("not supporeted async connection mode");
-        break;
     }
 }
 
@@ -189,16 +188,25 @@ void AsyncConnection::connect_callback(std::exception_ptr err) {
             _connecting_callback();
             break;
 
-        case State::SET_RESP:
-            _set_resp_callback();
-            break;
-
         case State::AUTHING:
             _authing_callback();
             break;
 
+        case State::SET_RESP:
+            _set_resp_callback();
+            break;
+
+        case State::SET_NAME:
+            _set_name_callback();
+            break;
+
         case State::SELECTING_DB:
             _select_db_callback();
+            break;
+
+        case State::BROKEN:
+            // Connection is closing or has been closed,
+            // and events of this connection have been processed.
             break;
 
         default:
@@ -316,10 +324,13 @@ void AsyncConnection::_fail_events(std::exception_ptr err) {
 }
 
 void AsyncConnection::_connecting_callback() {
-    if (_need_set_resp()) {
-        _set_resp();
-    } else if (_need_auth()) {
+    _secure_connection();
+    if (_need_auth()) {
         _auth();
+    } else if (_need_set_resp()) {
+        _set_resp();
+    } else if (_need_set_name()) {
+        _set_name();
     } else if (_need_select_db()) {
         _select_db();
     } else if (_need_enable_readonly()) {
@@ -330,8 +341,8 @@ void AsyncConnection::_connecting_callback() {
 }
 
 void AsyncConnection::_set_resp_callback() {
-    if (_need_auth()) {
-        _auth();
+    if (_need_set_name()) {
+        _set_name();
     } else if (_need_select_db()) {
         _select_db();
     } else if (_need_enable_readonly()) {
@@ -342,7 +353,11 @@ void AsyncConnection::_set_resp_callback() {
 }
 
 void AsyncConnection::_authing_callback() {
-    if (_need_select_db()) {
+    if (_need_set_resp()) {
+        _set_resp();
+    } else if (_need_set_name()) {
+        _set_name();
+    } else if (_need_select_db()) {
         _select_db();
     } else if (_need_enable_readonly()) {
         _enable_readonly();
@@ -351,6 +366,15 @@ void AsyncConnection::_authing_callback() {
     }
 }
 
+void AsyncConnection::_set_name_callback() {
+    if (_need_select_db()) {
+        _select_db();
+    } else if (_need_enable_readonly()) {
+        _enable_readonly();
+    } else {
+        _set_ready();
+    }
+}
 void AsyncConnection::_select_db_callback() {
     if (_need_enable_readonly()) {
         _enable_readonly();
@@ -388,6 +412,17 @@ void AsyncConnection::_auth() {
     }
 
     _state = State::AUTHING;
+}
+
+void AsyncConnection::_set_name() {
+    assert(!broken());
+
+    if (redisAsyncCommand(_ctx, set_options_callback, nullptr, "CLIENT SETNAME %b",
+            _opts.name.data(), _opts.name.size()) != REDIS_OK) {
+        throw Error("failed to send client setname command");
+    }
+
+    _state = State::SET_NAME;
 }
 
 void AsyncConnection::_select_db() {
@@ -443,15 +478,8 @@ void AsyncConnection::_connect() {
 
         assert(ctx && ctx->err == REDIS_OK);
 
-        const auto &tls_opts = opts.tls;
-        tls::TlsContextUPtr tls_ctx;
-        if (tls::enabled(tls_opts)) {
-            tls_ctx = tls::secure_connection(ctx->c, tls_opts);
-        }
-
         _loop->watch(*ctx);
 
-        _tls_ctx = std::move(tls_ctx);
         _ctx = ctx.release();
 
 #ifdef REDIS_PLUS_PLUS_RESP_VERSION_3
@@ -466,12 +494,27 @@ void AsyncConnection::_connect() {
     }
 }
 
+void AsyncConnection::_secure_connection() {
+    auto opts = options();
+    const auto& tls_opts = opts.tls;
+
+    if (!tls::enabled(tls_opts)) {
+        return;
+    }
+
+    _tls_ctx = tls::secure_connection(_ctx->c, tls_opts);
+}
+
 bool AsyncConnection::_need_set_resp() const {
     return _opts.resp > 2;
 }
 
 bool AsyncConnection::_need_auth() const {
     return !_opts.password.empty() || _opts.user != "default";
+}
+
+bool AsyncConnection::_need_set_name() const {
+    return !_opts.name.empty();
 }
 
 bool AsyncConnection::_need_select_db() const {
@@ -530,7 +573,7 @@ AsyncConnection::AsyncContextUPtr AsyncConnection::_connect(const ConnectionOpti
 
     auto ctx = AsyncContextUPtr(context);
     if (ctx->err != REDIS_OK) {
-        throw_error(ctx->c, "failed to connect to server");
+        throw_error(ctx->c, "failed to connect to Redis (" + opts._server_info() + ")");
     }
 
     ctx->data = new AsyncContext(shared_from_this());
@@ -555,6 +598,16 @@ AsyncConnection& GuardedAsyncConnection::connection() {
     assert(_connection);
 
     return *_connection;
+}
+
+namespace detail {
+
+void update_shards(const std::string &key,
+        std::shared_ptr<AsyncShardsPool> &pool,
+        AsyncEventUPtr event) {
+    pool->update(key, std::move(event));
+}
+
 }
 
 }

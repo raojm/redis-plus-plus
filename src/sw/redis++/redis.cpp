@@ -14,17 +14,18 @@
    limitations under the License.
  *************************************************************************/
 
-#include "redis.h"
+#include "sw/redis++/redis.h"
 #include <hiredis/hiredis.h>
-#include "command.h"
-#include "errors.h"
-#include "queued_redis.h"
+#include "sw/redis++/command.h"
+#include "sw/redis++/errors.h"
+#include "sw/redis++/queued_redis.h"
 
 namespace sw {
 
 namespace redis {
 
-Redis::Redis(const std::string &uri) : Redis(ConnectionOptions(uri)) {}
+Redis::Redis(const Uri &uri) :
+    Redis(uri.connection_options(), uri.connection_pool_options()) {}
 
 Redis::Redis(const GuardedConnectionSPtr &connection) : _connection(connection) {
     assert(_connection);
@@ -101,10 +102,10 @@ void Redis::bgrewriteaof() {
     reply::parse<void>(*reply);
 }
 
-void Redis::bgsave() {
-    auto reply = command(cmd::bgsave);
+std::string Redis::bgsave() {
+    auto reply = command<void (*)(Connection &)>(cmd::bgsave);
 
-    reply::parse<void>(*reply);
+    return reply::to_status(*reply);
 }
 
 long long Redis::dbsize() {
@@ -550,13 +551,13 @@ long long Redis::hlen(const StringView &key) {
     return reply::parse<long long>(*reply);
 }
 
-bool Redis::hset(const StringView &key, const StringView &field, const StringView &val) {
+long long Redis::hset(const StringView &key, const StringView &field, const StringView &val) {
     auto reply = command(cmd::hset, key, field, val);
 
-    return reply::parse<bool>(*reply);
+    return reply::parse<long long>(*reply);
 }
 
-bool Redis::hset(const StringView &key, const std::pair<StringView, StringView> &item) {
+long long Redis::hset(const StringView &key, const std::pair<StringView, StringView> &item) {
     return hset(key, item.first, item.second);
 }
 
@@ -858,6 +859,12 @@ std::string Redis::script_load(const StringView &script) {
 
 long long Redis::publish(const StringView &channel, const StringView &message) {
     auto reply = command(cmd::publish, channel, message);
+
+    return reply::parse<long long>(*reply);
+}
+
+long long Redis::spublish(const StringView &channel, const StringView &message) {
+    auto reply = command(cmd::spublish, channel, message);
 
     return reply::parse<long long>(*reply);
 }
